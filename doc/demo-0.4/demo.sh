@@ -238,3 +238,7 @@ transfer_asset issuer rcpt1 "$RGB0" "$RGB1" data0 data1 $txid_issue $vout_issue 
 # asset transfer no. 2
 _tit 'transferring asset from recipient 1 to recipient 2'
 transfer_asset rcpt1 rcpt2 "$RGB1" "$RGB2" data1 data2 $txid_rcpt $vout_rcpt 2 42 58
+
+# asset transfer no. 3
+_tit 'transferring asset from recipient 2 to issuer'
+transfer_asset rcpt2 issuer "$RGB2" "$RGB0" data2 data0 $txid_rcpt $vout_rcpt 3 32 10

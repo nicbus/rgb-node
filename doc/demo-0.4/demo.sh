@@ -38,9 +38,11 @@ _log() {
 }
 
 _trace() {
-    [ "$DEBUG" != 0 ] && set -x
+    { local trace=0; } 2>/dev/null
+    { [ -o xtrace ] && trace=1; } 2>/dev/null
+    { [ "$DEBUG" != 0 ] && set -x; } 2>/dev/null
     "$@"
-    { set +x; } 2>/dev/null
+    { [ "$trace" == 0 ] && set +x; } 2>/dev/null
 }
 
 prepare_wallets() {

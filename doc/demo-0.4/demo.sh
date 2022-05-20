@@ -5,12 +5,13 @@ RGB0='docker-compose exec -u rgbd rgb-node-0 rgb-cli -n regtest '
 RGB1='docker-compose exec -u rgbd rgb-node-1 rgb-cli -n regtest '
 RGB2='docker-compose exec -u rgbd rgb-node-2 rgb-cli -n regtest '
 
-addr=""   # filled by calling gen_addr()
-asset=""  # filled by calling get_asset_id()
-txid=""   # filled by calling gen_utxo()
-vout=""   # filled by calling gen_utxo()
+addr=""         # filled by calling gen_addr()
+asset=""        # filled by calling get_asset_id()
+txid=""         # filled by calling gen_utxo()
+vout=""         # filled by calling gen_utxo()
 txid_rcpt=""    # filled by transfer_asset
 vout_rcpt=""    # filled by transfer_asset
+balance=0       # filled by get_balance
 
 DEBUG=0
 MAX_RETRIES=5
@@ -98,6 +99,22 @@ get_asset_id() {
     _log $asset
 }
 
+get_balance() {
+    local wallet="$1"           # wallet name
+    local cli="$2"              # rgb-node cli alias
+
+    local allocs=($(_trace $cli fungible list -l -f json |tr -d '\r' \
+        |jq -r '.[] |.knownAllocations |.[] |.outpoint'))
+    local utxos=($(_trace $BCLI -rpcwallet=$wallet listunspent |tr -d '\r' \
+        |jq -r '.[] | "\(.txid):\(.vout)"'))
+    balance=0
+    for allocation in ${utxos[@]}; do
+        local amount=$(_trace $cli fungible list -l -f json |tr -d '\r' \
+            |jq -r ".[] |.knownAllocations |.[] |select (.outpoint == \"$allocation\") |.revealedAmount |.value")
+        balance=$(($balance+$amount))
+    done
+}
+
 transfer_asset() {
     # params
     local send_wlt="$1"         # sender wallet name
@@ -114,6 +131,12 @@ transfer_asset() {
     local txid_send_2="${12}"   # sender txid n. 2
     local vout_send_2="${13}"   # sender vout n. 2
 
+    # starting situation
+    _subtit "initial balances"
+    get_balance $send_wlt "$send_cli"
+    _log "sender balance: $balance"
+    get_balance $rcpt_wlt "$rcpt_cli"
+    _log "receiver balance: $balance"
     ## generate utxo to receive assets
     gen_utxo $rcpt_wlt
     txid_rcpt=$txid
@@ -216,6 +239,12 @@ transfer_asset() {
         _subtit "listing assets (recipient)"
         _trace $rcpt_cli fungible list -l
     fi
+    # ending situation
+    _subtit "final balances"
+    get_balance $send_wlt "$send_cli"
+    _log "sender balance: $balance"
+    get_balance $rcpt_wlt "$rcpt_cli"
+    _log "receiver balance: $balance"
 }
 
 # cmdline options

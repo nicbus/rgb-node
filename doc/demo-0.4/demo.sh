@@ -281,9 +281,20 @@ _tit 'issuing "USDT" asset'
 issue_asset
 get_asset_id
 
+
+# asset transfer to self test
+#_tit 'transferring asset from issuer to itself'
+#transfer_asset issuer issuer "$RGB0" "$RGB0" data0 data0 $txid_issue $vout_issue 1 100 900
+#exit 0
+
 # asset transfer no. 1
 _tit 'transferring asset from issuer to recipient 1'
 transfer_asset issuer rcpt1 "$RGB0" "$RGB1" data0 data1 $txid_issue $vout_issue 1 100 1900 $txid_issue_2 $vout_issue_2
+
+# change spending test
+#_tit 'transferring asset from issuer to recipient 1 - 2nd time (spending change)'
+#transfer_asset issuer rcpt1 "$RGB0" "$RGB1" data0 data1 $txid_change $vout_change 1 200 1700
+#exit 0
 
 # asset transfer no. 2
 _tit 'transferring asset from recipient 1 to recipient 2'

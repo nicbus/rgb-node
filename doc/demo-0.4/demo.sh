@@ -11,6 +11,8 @@ txid=""         # filled by calling gen_utxo()
 vout=""         # filled by calling gen_utxo()
 txid_rcpt=""    # filled by transfer_asset
 vout_rcpt=""    # filled by transfer_asset
+txid_change=""  # filled by transfer_asset
+vout_change=""  # filled by transfer_asset
 balance=0       # filled by get_balance
 
 DEBUG=0
@@ -84,6 +86,7 @@ gen_utxo() {
 
 issue_asset() {
     _subtit 'issuing asset'
+    _log "unspents before issuance" && _trace $BCLI -rpcwallet=issuer listunspent
     gen_utxo issuer
     txid_issue=$txid
     vout_issue=$vout
@@ -91,6 +94,7 @@ issue_asset() {
     txid_issue_2=$txid
     vout_issue_2=$vout
     _trace $RGB0 fungible issue USDT "USD Tether" 1000@$txid_issue:$vout_issue 1000@$txid_issue_2:$vout_issue_2
+    _log "unspents after issuance" && _trace $BCLI -rpcwallet=issuer listunspent
 }
 
 get_asset_id() {
@@ -131,6 +135,11 @@ transfer_asset() {
     local txid_send_2="${12}"   # sender txid n. 2
     local vout_send_2="${13}"   # sender vout n. 2
 
+    _log "spending $amt_send from $txid_send:$vout_send ($send_wlt) with $amt_change change"
+    if [ -n "$txid_send_2" -a -n "$vout_send_2" ]; then  # handle double input case
+        _log "also using $txid_send_2:$vout_send_2 as input"
+    fi
+    _log "unspents before transfer" && _trace $BCLI -rpcwallet=$send_wlt listunspent
     # starting situation
     _subtit "initial balances"
     get_balance $send_wlt "$send_cli"
@@ -148,8 +157,9 @@ transfer_asset() {
     local blind_secret_rcpt=$(echo $blinding |awk '{print $NF}' |tr -d '\r')
     ## generate addresses for transfer asset change and tx btc output
     gen_utxo $send_wlt
-    local txid_change=$txid
-    local vout_change=$vout
+    txid_change=$txid
+    vout_change=$vout
+    [ "$DEBUG" != 0 ] && _log "change outpoint $txid_change:$vout_change"
     gen_addr $send_wlt
     local addr_send=$addr
     ## create psbt
@@ -204,6 +214,14 @@ transfer_asset() {
     done
     echo "found"
     _trace cp {$send_data,$rcpt_data}/$cons
+    _log 'known allocations after transfer'
+    _trace $RGB0 fungible list -l -f json |tr -d '\r' |jq -r '.[] |.knownAllocations'
+    if [ "$DEBUG" != 0 ]; then
+        _subtit "showing inputs from witness"
+        _trace $BCLI decodepsbt $(base64 -w0 $send_data/$wtns) |tr -d '\r' |jq '.tx | .vin'
+        _subtit "showing outputs from witness"
+        _trace $BCLI decodepsbt $(base64 -w0 $send_data/$wtns) |tr -d '\r' |jq '.outputs'
+    fi
     ## validate transfer (tx will be still unresolved)
     _subtit "validating transfer (recipient)"
     local vldt="$(_trace $rcpt_cli fungible validate $cons |tr -d '\r')"
@@ -229,6 +247,8 @@ transfer_asset() {
         fi
     done
     _trace $rcpt_cli fungible accept $cons $txid_rcpt:$vout_rcpt $blind_secret_rcpt
+    _log 'known allocations before enclose'
+    _trace $RGB0 fungible list -l -f json |tr -d '\r' |jq -r '.[] |.knownAllocations'
     ## enclose
     _subtit "enclosing transfer (sender)"
     _trace $send_cli fungible enclose $disc
@@ -245,6 +265,7 @@ transfer_asset() {
     _log "sender balance: $balance"
     get_balance $rcpt_wlt "$rcpt_cli"
     _log "receiver balance: $balance"
+    _log "unspents after transfer" && _trace $BCLI -rpcwallet=$send_wlt listunspent
 }
 
 # cmdline options

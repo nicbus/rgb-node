@@ -24,7 +24,7 @@ C3='\033[0;34m' # blue
 NC='\033[0m'    # No Color
 
 _die() {
-    >&2 echo "$@"
+    echo >&2 "$@"
     exit 1
 }
 
@@ -66,7 +66,7 @@ gen_blocks() {
 gen_addr() {
     local wallet="$1"
     _subtit "generating new address for wallet \"$wallet\""
-    addr=$(_trace $BCLI -rpcwallet="$wallet" getnewaddress |tr -d '\r')
+    addr=$(_trace $BCLI -rpcwallet="$wallet" getnewaddress | tr -d '\r')
     _log "$addr"
 }
 
@@ -76,7 +76,7 @@ gen_utxo() {
     gen_addr "$wallet"
     # send and mine
     _subtit "sending funds to wallet \"$wallet\""
-    txid="$(_trace $BCLI -rpcwallet=miner sendtoaddress ${addr} 1 |tr -d '\r')"
+    txid="$(_trace $BCLI -rpcwallet=miner sendtoaddress ${addr} 1 | tr -d '\r')"
     gen_blocks 1
     # extract vout
     _subtit "extracting vout"
@@ -105,7 +105,7 @@ get_asset_id() {
 }
 
 export_asset() {
-    exp_asset="$(_trace $RGB0 fungible export $asset |tail -1 |tr -d '\r')"
+    exp_asset="$(_trace $RGB0 fungible export $asset | tail -1 | tr -d '\r')"
     _log "exp_asset: $exp_asset"
 }
 
@@ -118,14 +118,14 @@ get_balance() {
     local wallet="$1"           # wallet name
     local cli="$2"              # rgb-node cli alias
 
-    local utxos=($(_trace $BCLI -rpcwallet="$wallet" listunspent |tr -d '\r' \
-        |jq -r '.[] | "\(.txid):\(.vout)"'))
+    local utxos=($(_trace $BCLI -rpcwallet="$wallet" listunspent | tr -d '\r' \
+        | jq -r '.[] | "\(.txid):\(.vout)"'))
     balance=0
     _log "utxos: ${utxos[*]}"
     for utxo in "${utxos[@]}"; do
-        local amount=$(_trace $cli fungible list -l -f json |tr -d '\r' \
-            |jq -r ".[] |.knownAllocations |.[] |select (.outpoint == \"$utxo\") |.revealedAmount |.value")
-        balance=$((balance+amount))
+        local amount=$(_trace $cli fungible list -l -f json | tr -d '\r' \
+            | jq -r ".[] |.knownAllocations |.[] |select (.outpoint == \"$utxo\") |.revealedAmount |.value")
+        balance=$((balance + amount))
     done
 }
 
@@ -163,8 +163,8 @@ transfer_asset() {
     ## blind receiving utxo
     _subtit "blinding UTXO for transfer n. $num"
     local blinding="$(_trace $rcpt_cli fungible blind $txid_rcpt:$vout_rcpt)"
-    local blind_utxo_rcpt=$(echo $blinding |awk '{print $3}' |tr -d '\r')
-    local blind_secret_rcpt=$(echo $blinding |awk '{print $NF}' |tr -d '\r')
+    local blind_utxo_rcpt=$(echo $blinding | awk '{print $3}' | tr -d '\r')
+    local blind_secret_rcpt=$(echo $blinding | awk '{print $NF}' | tr -d '\r')
     ## generate addresses for transfer asset change and tx btc output
     gen_utxo "$send_wlt"
     txid_change=$txid
@@ -176,11 +176,11 @@ transfer_asset() {
     _subtit "creating PSBT"
     [ "$DEBUG" != 0 ] && _trace $BCLI -rpcwallet="$send_wlt" listunspent
     local filter=".[] |select(.txid == \"$txid_send\") |.amount"
-    local amnt="$(_trace $BCLI -rpcwallet=$send_wlt listunspent |tr -d '\r' |jq -r "$filter")"
+    local amnt="$(_trace $BCLI -rpcwallet=$send_wlt listunspent | tr -d '\r' | jq -r "$filter")"
     if [ -n "$txid_send_2" ] && [ -n "$vout_send_2" ]; then  # handle double input case
         filter=".[] |select(.txid == \"$txid_send_2\") |.amount"
-        local amnt_2="$(_trace $BCLI -rpcwallet=$send_wlt listunspent |tr -d '\r' |jq -r "$filter")"
-        amnt=$((amnt+amnt_2))
+        local amnt_2="$(_trace $BCLI -rpcwallet=$send_wlt listunspent | tr -d '\r' | jq -r "$filter")"
+        amnt=$((amnt + amnt_2))
     fi
     local psbt=tx${num}.psbt
     local cons=consignment${num}.rgb
@@ -195,12 +195,12 @@ transfer_asset() {
     local out="[{\"$addr_send\": \"$amnt\"}]"
     local opts="{\"subtractFeeFromOutputs\": [0]}"
     _trace $BCLI -rpcwallet="$send_wlt" walletcreatefundedpsbt "$in" "$out" 0 "$opts" \
-        | jq -r '.psbt' | base64 -d > "$send_data/$psbt"
+        | jq -r '.psbt' | base64 -d >"$send_data/$psbt"
     if [ "$DEBUG" != 0 ]; then
         _subtit "showing inputs from psbt"
-        _trace $BCLI decodepsbt "$(base64 -w0 "$send_data/$psbt")" |tr -d '\r' |jq '.tx | .vin'
+        _trace $BCLI decodepsbt "$(base64 -w0 "$send_data/$psbt")" | tr -d '\r' | jq '.tx | .vin'
         _subtit "showing outputs from psbt"
-        _trace $BCLI decodepsbt "$(base64 -w0 "$send_data/$psbt")" |tr -d '\r' |jq '.outputs'
+        _trace $BCLI decodepsbt "$(base64 -w0 "$send_data/$psbt")" | tr -d '\r' | jq '.outputs'
     fi
     sleep 1
     ## transfer
@@ -217,7 +217,7 @@ transfer_asset() {
     _subtit "waiting for witness psbt to appear"
     local tries=0
     while [ ! -f "$send_data/$wtns" ]; do
-        tries=$((tries+1))
+        tries=$((tries + 1))
         [ $tries -gt $MAX_RETRIES ] && _die " max retries reached"
         echo -n '.'
         sleep 1
@@ -225,40 +225,40 @@ transfer_asset() {
     echo "found"
     _trace cp {$send_data,$rcpt_data}/$cons
     _log 'known allocations after transfer'
-    _trace $RGB0 fungible list -l -f json |tr -d '\r' |jq -r '.[] |.knownAllocations'
+    _trace $RGB0 fungible list -l -f json | tr -d '\r' | jq -r '.[] |.knownAllocations'
     if [ "$DEBUG" != 0 ]; then
         _subtit "showing inputs from witness"
-        _trace $BCLI decodepsbt "$(base64 -w0 "$send_data/$wtns")" |tr -d '\r' |jq '.tx | .vin'
+        _trace $BCLI decodepsbt "$(base64 -w0 "$send_data/$wtns")" | tr -d '\r' | jq '.tx | .vin'
         _subtit "showing outputs from witness"
-        _trace $BCLI decodepsbt "$(base64 -w0 "$send_data/$wtns")" |tr -d '\r' |jq '.outputs'
+        _trace $BCLI decodepsbt "$(base64 -w0 "$send_data/$wtns")" | tr -d '\r' | jq '.outputs'
     fi
     ## validate transfer (tx will be still unresolved)
     _subtit "validating transfer (recipient)"
-    local vldt="$(_trace $rcpt_cli fungible validate $cons |tr -d '\r')"
+    local vldt="$(_trace $rcpt_cli fungible validate $cons | tr -d '\r')"
     _log "$vldt"
-    if ! echo "$vldt" |grep -q 'failures: \[\],'; then
+    if ! echo "$vldt" | grep -q 'failures: \[\],'; then
         _die "validation error (failure)"
     fi
     ## complete psbt + broadcast
     _subtit "finalizing and broadcasting tx"
     local base64_psbt=$(_trace $BCLI -rpcwallet="$send_wlt" walletprocesspsbt \
-        "$(base64 -w0 "$send_data/$wtns")" |jq -r '.psbt')
+        "$(base64 -w0 "$send_data/$wtns")" | jq -r '.psbt')
     local psbt_final=$(_trace $BCLI -rpcwallet="$send_wlt" finalizepsbt "$base64_psbt" \
         | jq -r '.hex')
     _trace $BCLI -rpcwallet="$send_wlt" sendrawtransaction "$psbt_final"
     gen_blocks 1
     ## accept (tx is now broadcast and confirmed, so it has to resolve)
     _subtit "accepting transfer (recipient)"
-    local vldt="$(_trace $rcpt_cli fungible validate $cons |tr -d '\r')"
+    local vldt="$(_trace $rcpt_cli fungible validate $cons | tr -d '\r')"
     _log "$vldt"
     for issue in failures unresolved_txids; do
-        if ! echo "$vldt" |grep -q "$issue: \[\],"; then
+        if ! echo "$vldt" | grep -q "$issue: \[\],"; then
             _die "validation error ($issue)"
         fi
     done
     _trace $rcpt_cli fungible accept "$cons" "$txid_rcpt:$vout_rcpt" "$blind_secret_rcpt"
     _log 'known allocations before enclose'
-    _trace $RGB0 fungible list -l -f json |tr -d '\r' |jq -r '.[] |.knownAllocations'
+    _trace $RGB0 fungible list -l -f json | tr -d '\r' | jq -r '.[] |.knownAllocations'
     ## enclose
     _subtit "enclosing transfer (sender)"
     _trace $send_cli fungible enclose "$disc"
@@ -291,7 +291,6 @@ _tit 'issuing "USDT" asset'
 issue_asset
 get_asset_id
 export_asset
-
 
 # asset transfer to self test
 #_tit 'transferring asset from issuer to itself'

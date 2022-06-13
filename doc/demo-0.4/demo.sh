@@ -166,10 +166,16 @@ transfer_asset() {
     local blind_utxo_rcpt=$(echo $blinding | awk '{print $3}' | tr -d '\r')
     local blind_secret_rcpt=$(echo $blinding | awk '{print $NF}' | tr -d '\r')
     ## generate addresses for transfer asset change and tx btc output
-    gen_utxo "$send_wlt"
-    txid_change=$txid
-    vout_change=$vout
-    [ "$DEBUG" != 0 ] && _log "change outpoint $txid_change:$vout_change"
+    if [ "$amt_change" -gt 0 ]; then
+        gen_utxo "$send_wlt"
+        txid_change=$txid
+        vout_change=$vout
+        [ "$DEBUG" != 0 ] && _log "change outpoint $txid_change:$vout_change"
+    else
+        unset txid_change
+        unset vout_change
+        [ "$DEBUG" != 0 ] && _log "change amount is 0, skipping change outpoint creation"
+    fi
     gen_addr "$send_wlt"
     local addr_send=$addr
     ## create psbt
@@ -206,6 +212,11 @@ transfer_asset() {
     ## transfer
     _subtit "transferring asset"
     local input="-i $txid_send:$vout_send"
+    if [ "$amt_change" -gt 0 ]; then
+        local change="-a $amt_change@$txid_change:$vout_change"
+    else
+        local change=""
+    fi
     if [ -n "$txid_send_2" ] && [ -n "$vout_send_2" ]; then  # handle double input case
         input="$input -i $txid_send_2:$vout_send_2"
     fi
@@ -213,7 +224,7 @@ transfer_asset() {
         $blind_utxo_rcpt $amt_send $asset \
         $psbt $cons $disc $wtns \
         $input \
-        -a $amt_change@$txid_change:$vout_change
+        $change
     _subtit "waiting for witness psbt to appear"
     local tries=0
     while [ ! -f "$send_data/$wtns" ]; do
@@ -295,6 +306,12 @@ export_asset
 # asset transfer to self test
 #_tit 'transferring asset from issuer to itself'
 #transfer_asset issuer issuer "$RGB0" "$RGB0" data0 data0 $txid_issue $vout_issue 1 100 900
+#exit 0
+
+# asset transfer 100% -> no change self test
+#_tit 'transferring asset completely (0 change) from issuer to recipient 1'
+##import_asset "$RGB1"
+#transfer_asset issuer rcpt1 "$RGB0" "$RGB1" data0 data1 "$txid_issue" "$vout_issue" 1 2000 0 "$txid_issue_2" "$vout_issue_2"
 #exit 0
 
 # asset transfer no. 1

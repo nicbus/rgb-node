@@ -1,14 +1,24 @@
 #!/bin/bash
 
-#CLOSING_METHOD="opret1st"
-CLOSING_METHOD="tapret1st"
+# closing method (OP_RETURN or Tapret)
+CLOSING_METHOD="opret1st"
+#CLOSING_METHOD="tapret1st"
 
+# command aliases
 BCLI='docker-compose exec -u blits bitcoind bitcoin-cli -regtest '
 RGB0='docker-compose exec -u rgbd rgb-node-0 rgb-cli -n regtest '
 RGB1='docker-compose exec -u rgbd rgb-node-1 rgb-cli -n regtest '
 RGB2='docker-compose exec -u rgbd rgb-node-2 rgb-cli -n regtest '
 
-addr=""         # filled by calling gen_addr()
+# descriptor and address count for each node's wallet
+descriptor_issuer=""
+descriptor_rcpt1=""
+descriptor_rcpt2=""
+addr_count_issuer=0
+addr_count_rcpt1=0
+addr_count_rcpt2=0
+
+addr=""         # filled by calling derive_addr()
 asset=""        # filled by calling get_asset_id()
 txid=""         # filled by calling gen_utxo()
 vout=""         # filled by calling gen_utxo()
@@ -18,6 +28,7 @@ txid_change=""  # filled by transfer_asset
 vout_change=""  # filled by transfer_asset
 balance=0       # filled by get_balance
 exp_asset=""    # filled by export_asset
+descriptor=""   # filled by get_descriptor
 
 DEBUG=0
 MAX_RETRIES=5
@@ -52,10 +63,21 @@ _trace() {
     { [ "$trace" == 0 ] && set +x; } 2>/dev/null
 }
 
+get_descriptor() {
+    local wallet="$1"
+    local filter='.descriptors |.[] |.desc |select (startswith("tr(tprv")) |select (contains("0/*"))'
+    descriptor=$(_trace $BCLI -rpcwallet=$wallet listdescriptors true \
+        |tr -d '\r' |jq -r "$filter")
+    printf -v "descriptor_$wallet" '%s' "$descriptor"
+    local desc_var="descriptor_$wallet"
+    _log "descriptor: ${!desc_var}"
+}
+
 prepare_wallets() {
     for wallet in 'miner' 'issuer' 'rcpt1' 'rcpt2'; do
         _subtit "creating wallet $wallet"
         _trace $BCLI createwallet $wallet >/dev/null
+        get_descriptor $wallet
     done
 }
 
@@ -66,17 +88,21 @@ gen_blocks() {
     sleep 1     # give electrs time to index
 }
 
-gen_addr() {
+derive_addr() {
     local wallet="$1"
-    _subtit "generating new address for wallet \"$wallet\""
-    addr=$(_trace $BCLI -rpcwallet="$wallet" getnewaddress | tr -d '\r')
-    _log "$addr"
+    local desc_var=descriptor_$wallet
+    local addr_var="addr_count_$wallet"
+    local idx=${!addr_var}
+    addr="$(_trace $BCLI deriveaddresses ${!desc_var} [$idx,$idx] |tr -d '\r' |jq -r '.[]')"
+    _log "derived address: $addr"
+    local next=$((idx+1))
+    printf -v "addr_count_$wallet" '%s' "$next"
 }
 
 gen_utxo() {
     local wallet="$1"
     # generate an address
-    gen_addr "$wallet"
+    derive_addr "$wallet"
     # send and mine
     _subtit "sending funds to wallet \"$wallet\""
     txid="$(_trace $BCLI -rpcwallet=miner sendtoaddress ${addr} 1 | tr -d '\r')"
@@ -179,7 +205,7 @@ transfer_asset() {
         unset vout_change
         [ "$DEBUG" != 0 ] && _log "change amount is 0, skipping change outpoint creation"
     fi
-    gen_addr "$send_wlt"
+    derive_addr "$send_wlt"
     local addr_send=$addr
     ## create psbt
     _subtit "creating PSBT"
